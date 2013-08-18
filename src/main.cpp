@@ -34,9 +34,9 @@
  */
 #include <string>
 
-#include "comms.h"
+#include "um6/comms.h"
 #include "geometry_msgs/Vector3Stamped.h"
-#include "registers.h"
+#include "um6/registers.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 #include "serial/serial.h"

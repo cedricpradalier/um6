@@ -32,11 +32,12 @@
  *
  */
 
-#ifndef INCLUDE_UM6_COMMS_H_
-#define INCLUDE_UM6_COMMS_H_
+#ifndef INCLUDE_COMMS_H_
+#define INCLUDE_COMMS_H_
 
 #include <stdint.h>
 #include <string>
+#include "um6/um6_fifo.h"
 
 namespace serial {
   class Serial;
@@ -54,15 +55,18 @@ class Accessor_;
 class Comms {
   public:
     explicit Comms(serial::Serial& s) : serial_(s), first_spin_(true) {
+        state = WAITING_HEADER;
+        terminate = false;
+        waiting_ack = false;
     }
 
-    /**
-     * Returns -1 if the serial port timed out before receiving a packet
-     * successfully, or if there was a bad checksum or any other error.
-     * Otherwise, returns the 8-bit register number of the successfully
-     * returned packet.
-     */
-    int16_t receive(Registers* r);
+    ~Comms() {
+        terminate = true;
+        receiver.join();
+    }
+
+    typedef boost::function<void (Registers&)> RegisterCallback;
+    void startListeningThread(Registers* registers, int trigger, RegisterCallback callback);
 
     void send(const Accessor_& a) const;
 
@@ -80,8 +84,32 @@ class Comms {
   private:
     serial::Serial& serial_;
     bool first_spin_;
+
+    void serialThread(Registers* registers, int trigger, RegisterCallback callback);
+
+    CharFIFO fifo_;
+    enum {WAITING_HEADER, WAITING_DATA_SIZE, WAITING_DATA} state;
+    struct Message {
+        uint8_t type;
+        uint8_t address;
+        bool has_data;
+        bool is_batch;
+        std::vector<uint8_t> data;
+        void clear() {
+            type = address = 0;
+            has_data = is_batch = false;
+            data.clear();
+        }
+    };
+    bool waiting_ack;
+    boost::thread receiver;
+    boost::mutex msg_mutex;
+    boost::condition_variable_any msg_cond;
+    std::list<Message> messages;
+    bool terminate;
+
 };
 }
 
-#endif  // INCLUDE_UM6_COMMS_H_
+#endif  // INCLUDE_COMMS_H_
 

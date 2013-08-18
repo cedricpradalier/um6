@@ -32,14 +32,14 @@
  *
  */
 
-#include "comms.h"
+#include "um6/comms.h"
 
 #include <arpa/inet.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/foreach.hpp>
 #include <string>
 
-#include "registers.h"
+#include "um6/registers.h"
 #include "ros/ros.h"
 #include "ros/console.h"
 #include "serial/serial.h"

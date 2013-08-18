@@ -1,0 +1,15 @@
+<launch>
+    <node pkg="um6" type="um6_driver" name="um6_driver" output="screen" respawn="false">
+        <param name="port" type="string" value="/dev/clearpath/imu"/>
+        <param name="frame_id" type="string" value="/kingfisher/imu"/>
+        <param name="mag_updates" type="bool" value="false"/>
+        <param name="accel_updates" type="bool" value="true"/>
+        <param name="zero_gyros" type="bool" value="true"/>
+        <param name="raw_mag" type="bool" value="true"/>
+<!-- Does not work yet
+        <param name="mag_ref/x" value="208.292"/>
+        <param name="mag_ref/y" value="-70.454"/>
+        <param name="mag_ref/z" value="-224.979"/>
+-->
+    </node>
+</launch>

@@ -33,21 +33,21 @@
  *
  */
 
-#ifndef INCLUDE_UM6_REGISTERS_H_
-#define INCLUDE_UM6_REGISTERS_H_
+#ifndef INCLUDE_REGISTERS_H_
+#define INCLUDE_REGISTERS_H_
 
 #include <endian.h>
-#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
 #include <stdexcept>
 #include <string>
 
-#include "um6/firmware_registers.h"
+#include "firmware_registers.h"
 
-#define TO_RADIANS (M_PI / 180.0)
-#define TO_DEGREES (180.0 / M_PI)
+#define PI 3.14159265359
+#define TO_RADIANS (PI / 180.0)
+#define TO_DEGREES (180.0 / PI)
 
 // This excludes the command registers, which are always sent
 // and received with no data.
@@ -155,33 +155,23 @@ class Registers {
       covariance(this, UM6_ERROR_COV_00, 16),
       temperature(this, UM6_TEMPERATURE, 1),
       communication(this, UM6_COMMUNICATION, 1),
-      misc_config(this, UM6_MISC_CONFIG, 1),
-      status(this, UM6_STATUS, 1),
       mag_ref(this, UM6_MAG_REF_X, 3),
       accel_ref(this, UM6_ACCEL_REF_X, 3),
       gyro_bias(this, UM6_GYRO_BIAS_XY, 3),
       accel_bias(this, UM6_ACCEL_BIAS_XY, 3),
-      mag_bias(this, UM6_MAG_BIAS_XY, 3),
-      cmd_zero_gyros(this, UM6_ZERO_GYROS),
-      cmd_reset_ekf(this, UM6_RESET_EKF),
-      cmd_set_accel_ref(this, UM6_SET_ACCEL_REF),
-      cmd_set_mag_ref(this, UM6_SET_MAG_REF) {
+      mag_bias(this, UM6_MAG_BIAS_XY, 3) {
       memset(raw_, 0, sizeof(raw_));
     }
 
     // Data
-    const Accessor<int16_t> gyro_raw, accel_raw, mag_raw,
-                            gyro, accel, mag, euler, quat;
+    const Accessor<int16_t> gyro_raw, accel_raw, mag_raw;
+    const Accessor<int16_t> gyro, accel, mag, euler, quat;
     const Accessor<float> covariance, temperature;
 
     // Configs
-    const Accessor<uint32_t> communication, misc_config, status;
+    const Accessor<uint32_t> communication;
     const Accessor<float> mag_ref, accel_ref;
     const Accessor<int16_t> gyro_bias, accel_bias, mag_bias;
-
-    // Commands
-    const Accessor<uint32_t> cmd_zero_gyros, cmd_reset_ekf, 
-                             cmd_set_accel_ref, cmd_set_mag_ref;
 
     void write_raw(uint8_t register_index, std::string data) {
       if ((register_index - 1) + (data.length()/4 - 1) >= NUM_REGISTERS) {
@@ -197,4 +187,4 @@ class Registers {
 };
 }
 
-#endif  // INCLUDE_UM6_REGISTERS_H_
+#endif  // INCLUDE_REGISTERS_H_
