@@ -9,8 +9,8 @@ namespace um6 {
             typedef boost::mutex::scoped_lock Lock;
             boost::mutex mutex;
 
-            static const unsigned int fifo_size = 1024;
-            static const unsigned int fifo_size_mask = 0x3FF;
+            static const unsigned int fifo_size = 4096;
+            static const unsigned int fifo_size_mask = 0xFFF;
 
             uint8_t fifo[fifo_size];
             unsigned int fifo_read;
@@ -24,6 +24,22 @@ namespace um6 {
                 }
             }
 
+            void unsafe_push(uint8_t c) {
+                fifo[fifo_write] = c;
+                fifo_write = (fifo_write+1)&fifo_size_mask;
+                if (fifo_write == fifo_read) {
+                    fifo_read = (fifo_read+1)&fifo_size_mask;
+                }
+            }
+
+            bool unsafe_pop(uint8_t * c = NULL) {
+                if (fifo_read == fifo_write) {
+                    return false;
+                }
+                if (c) *c = fifo[fifo_read];
+                fifo_read = (fifo_read+1)&fifo_size_mask;
+                return true;
+            }
 
         public:
             CharFIFO() {
@@ -37,25 +53,19 @@ namespace um6 {
 
             void push(uint8_t c) {
                 Lock lock(mutex);
-                fifo[fifo_write] = c;
-                fifo_write = (fifo_write+1)&fifo_size_mask;
+                unsafe_push(c);
             }
 
             void push(uint8_t *c, size_t size) {
                 Lock lock(mutex);
                 for (size_t i=0;i<size;i++) {
-                    push(*c);
+                    unsafe_push(*c++);
                 }
             }
 
             bool pop(uint8_t * c = NULL) {
                 Lock lock(mutex);
-                if (fifo_read == fifo_write) {
-                    return false;
-                }
-                if (c) *c = fifo[fifo_read];
-                fifo_read = (fifo_read+1)&fifo_size_mask;
-                return true;
+                return unsafe_pop(c);
             }
 
             void discard_until(uint8_t value) {
@@ -86,9 +96,9 @@ namespace um6 {
                 }
                 for (size_t i=0;i<size;i++) {
                     if (c) {
-                        pop(c++);
+                        unsafe_pop(c++);
                     } else {
-                        pop(NULL);
+                        unsafe_pop(NULL);
                     }
                 }
                 return size;

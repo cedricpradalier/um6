@@ -112,11 +112,13 @@ void configureSensor(um6::Comms* sensor) {
  * Uses the register accessors to grab data from the IMU, and populate
  * the ROS messages which are output.
  */
-void publishMsgs(um6::Registers& r, ros::NodeHandle* n, const std_msgs::Header& header) {
+void publishMsgs(um6::Registers& r, ros::NodeHandle* n, const std_msgs::Header& header_base) {
   static ros::Publisher imu_pub = n->advertise<sensor_msgs::Imu>("imu/data", 1, false);
   static ros::Publisher mag_pub = n->advertise<geometry_msgs::Vector3Stamped>("imu/mag", 1, false);
   static ros::Publisher rpy_pub = n->advertise<geometry_msgs::Vector3Stamped>("imu/rpy", 1, false);
   static ros::Publisher temp_pub = n->advertise<std_msgs::Float32>("imu/temperature", 1, false);
+  std_msgs::Header header = header_base;
+  header.stamp = ros::Time::now();
 
   if (imu_pub.getNumSubscribers() > 0) {
     sensor_msgs::Imu imu_msg;
@@ -218,11 +220,12 @@ int main(int argc, char **argv) {
       first_failure = true;
       try {
         um6::Comms sensor(ser);
-        configureSensor(&sensor);
-
         um6::Registers registers;
         sensor.startListeningThread(&registers,TRIGGER_PACKET, 
                 boost::bind(publishMsgs,_1,&n,header));
+
+        configureSensor(&sensor);
+
         ros::spin();
       } catch(const std::exception& e) {
         if (ser.isOpen()) ser.close();

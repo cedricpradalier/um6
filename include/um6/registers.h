@@ -180,6 +180,13 @@ class Registers {
       memcpy(&raw_[register_index], data.c_str(), data.length());
     }
 
+    void write_raw(uint8_t register_index, uint8_t* data,size_t size) {
+      if ((register_index - 1) + (size/4 - 1) >= NUM_REGISTERS) {
+        throw std::range_error("Index and length write beyond boundaries of register array.");
+      }
+      memcpy(&raw_[register_index], data, size);
+    }
+
   private:
     uint32_t raw_[NUM_REGISTERS];
 

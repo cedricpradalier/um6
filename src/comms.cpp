@@ -44,6 +44,8 @@
 #include "ros/console.h"
 #include "serial/serial.h"
 
+#define DEBUG_COMMS
+
 namespace um6 {
 
 
@@ -51,18 +53,28 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
     uint16_t checksum_calculated = 0;
     uint8_t data_length = 0;
     Message msg;
+    ROS_INFO("Starting listening thread");
+    uint8_t buffer[512];
+    // First empty the buffer
+    while (serial_.lowlevel_read(buffer,128)) {};
+
     while (!terminate && ros::ok()) {
-        if (serial_.waitData(500)) {
-            uint8_t buffer[128];
-            size_t n = serial_.lowlevel_read(buffer,128);
-            if (!n) {
-                ROS_WARN("Could not read data when select reported data available. Is the sensor connected?");
-                fifo_.clear();
-                // Sleeping, otherwise we could have a busy loop here
-                ros::Duration(1.0).sleep();
-                continue;
-            }
-            fifo_.push(buffer,n);
+        if (serial_.wait_data(500)) {
+            // Wait a bit to make sur we have plenty to read
+            ros::Duration(10e-3).sleep();
+#ifdef DEBUG_COMMS
+            ROS_DEBUG("Data!");
+#endif
+            // Now get it all and push it back in the buffer
+            size_t n = 0;
+            do {
+                n = serial_.lowlevel_read(buffer,512);
+                fifo_.push(buffer,n);
+            } while (n);
+#ifdef DEBUG_COMMS
+            ROS_DEBUG("Pushing data: size %d",(int)fifo_.available());
+#endif
+            // Finally go through the data and extract all packets
             bool enough_data = true;
             while (enough_data) {
                 switch (state) {
@@ -73,7 +85,6 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
                             if (fifo_.peek(hdr,3)==3) {
                                 if ((hdr[0]=='s') && (hdr[1]=='n') && (hdr[2]=='p')) {
                                     state = WAITING_DATA_SIZE;
-                                    checksum_calculated = 's' + 'n' + 'p';
                                     msg.clear();
                                     // Discard header
                                     fifo_.pop(NULL,3);
@@ -81,6 +92,7 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
                                 } else {
                                     // This was not an interesting 's', discard it
                                     fifo_.pop();
+                                    continue;
                                 }
                             }
                             enough_data = false;
@@ -98,15 +110,21 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
                                     data_length = 1;
                                     if (msg.is_batch) {
                                         data_length = (msg.type >> PACKET_BATCH_LENGTH_OFFSET) & PACKET_BATCH_LENGTH_MASK;
+#ifdef DEBUG_COMMS
                                         ROS_DEBUG("Received packet %02x with batched (%d) data.", msg.address, data_length);
+#endif
                                     } else {
+#ifdef DEBUG_COMMS
                                         ROS_DEBUG("Received packet %02x with non-batched data.", msg.address);
+#endif
                                     }
-                                    msg.data.resize(data_length);
+                                    data_length *= 4;
                                     state = WAITING_DATA;
                                     continue;
                                 } else {
+#ifdef DEBUG_COMMS
                                     ROS_DEBUG("Received packet %02x without data.", msg.address);
+#endif
                                     data_length = 0;
                                     state = WAITING_DATA;
                                     continue;
@@ -117,28 +135,40 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
                         }
                     case WAITING_DATA:
                         {
-                            uint8_t data[data_length + 4];
                             if (fifo_.available()>=(data_length+4)) {
+                                uint8_t data[data_length + 4];
+                                std::string dbg = "snp ";
                                 fifo_.pop(data,data_length+4);
-                                checksum_calculated += data[0] + data[1];
-                                for (size_t i=2;i<(size_t)(data_length+2);i++) {
+                                checksum_calculated = 's' + 'n' + 'p';
+                                for (size_t i=0;i<(size_t)(data_length+2);i++) {
+                                    char tdbg[4];
+                                    sprintf(tdbg,"%02X ",data[i]);
+                                    dbg+=tdbg;
                                     checksum_calculated += data[i];
+
                                 }
                                 uint16_t checksum_transmitted = *reinterpret_cast<uint16_t*>(data+data_length+2);
                                 checksum_transmitted = ntohs(checksum_transmitted);
                                 if (checksum_transmitted != checksum_calculated) {
-                                    ROS_WARN("Discarding packet due to bad checksum.");
+#ifdef DEBUG_COMMS
+                                    ROS_DEBUG("Message data: %s",dbg.c_str());
+#endif
+                                    ROS_WARN("Discarding packet due to bad checksum %04X / %04X.",checksum_transmitted,checksum_calculated);
                                 } else {
+#ifdef DEBUG_COMMS
+                                    ROS_DEBUG("Accepted data: %s",dbg.c_str());
+#endif
                                     boost::mutex::scoped_lock lock(msg_mutex);
                                     // Copy data from checksum buffer into registers, if specified.
                                     // Note that byte-order correction (as necessary) happens at access-time.
-                                    if ((msg.data.size() > 0) and registers) {
-                                        registers->write_raw(msg.address, (const char*)(data+2));
+                                    if ((data_length > 0) and registers) {
+                                        registers->write_raw(msg.address, data+2,data_length);
                                         if (msg.address == trigger) {
                                             callback(*registers);
                                         }
                                     }
                                     if (waiting_ack) {
+                                        msg.data.resize(data_length);
                                         for (size_t i=2;i<(size_t)(data_length+2);i++) {
                                             msg.data[i-2] = data[i];
                                         }
@@ -147,6 +177,7 @@ void Comms::serialThread(Registers* registers, int trigger, RegisterCallback  ca
                                     }
                                 }
                                 state = WAITING_HEADER;
+                                continue;
                             }
                             enough_data = false;
                             break;
@@ -181,7 +212,9 @@ std::string Comms::checksum(const std::string& s) {
   BOOST_FOREACH(uint8_t ch, s)
     checksum += ch;
   checksum = htons(checksum);
+#ifdef DEBUG_COMMS
   ROS_DEBUG("Computed checksum on string of length %ld as %04x.", (long int)s.length(), checksum);
+#endif
   std::string out(2, 0);
   memcpy(&out[0], &checksum, 2);
   return out;
@@ -202,7 +235,9 @@ std::string Comms::message(uint8_t address, std::string data) {
   std::string c = checksum(output);
   ss << c;
   output = ss.str();
-  ROS_DEBUG("Generated message %02x of overall length %ld.", address, output.length());
+#ifdef DEBUG_COMMS
+  ROS_DEBUG("Generated message %02x of overall length %ld.", address, (long int)output.length());
+#endif
   return output;
 }
 
@@ -234,7 +269,9 @@ bool Comms::sendWaitAck(const Accessor_& r) {
           if (received == r.index) {
               waiting_ack = false;
               messages.clear();
+#ifdef DEBUG_COMMS
               ROS_DEBUG("Message %02x ack received.", received);
+#endif
               return true;
           }
       }

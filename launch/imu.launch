@@ -1,5 +1,5 @@
 <launch>
-    <node pkg="um6" type="um6_driver" name="um6_driver" output="screen" respawn="false">
+    <node pkg="um6cp" type="um6cp_driver" name="um6_driver" output="screen" respawn="false">
         <param name="port" type="string" value="/dev/clearpath/imu"/>
         <param name="frame_id" type="string" value="/kingfisher/imu"/>
         <param name="mag_updates" type="bool" value="false"/>

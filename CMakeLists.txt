@@ -6,9 +6,11 @@ rosbuild_init()
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
+add_definitions(-O3)
+
 rosbuild_add_boost_directories()
 include_directories(serial/include)
 
-rosbuild_add_executable(um6_driver src/main.cpp src/comms.cpp src/registers.cpp serial/src/serial.cc serial/src/impl/unix.cc)
-rosbuild_link_boost(um6_driver thread signals)
+rosbuild_add_executable(um6cp_driver src/main.cpp src/comms.cpp src/registers.cpp serial/src/serial.cc serial/src/impl/unix.cc)
+rosbuild_link_boost(um6cp_driver thread signals)
 
