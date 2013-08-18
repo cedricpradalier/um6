@@ -34,15 +34,16 @@
  */
 #include <string>
 
+#include "comms.h"
 #include "geometry_msgs/Vector3Stamped.h"
+#include "registers.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 #include "serial/serial.h"
 #include "std_msgs/Float32.h"
 #include "std_msgs/Header.h"
-#include "um6/comms.h"
-#include "um6/registers.h"
-#include "um6/Reset.h"
+
+
 
 // Don't try to be too clever. Arrival of this message triggers
 // us to publish everything we have.
@@ -70,23 +71,10 @@ void configureVector3(um6::Comms* sensor, const um6::Accessor<RegT>& reg,
     reg.set_scaled(1, y);
     reg.set_scaled(2, z);
     if (sensor->sendWaitAck(reg)) {
-      throw std::runtime_error("Unable to configure vector.");
+      throw std::runtime_error("Unable to configure ");
     }
   }
 }
-
-/**
- * Function generalizes the process of commanding the UM6 via one of its command
- * registers.
- */
-template<typename RegT>
-void sendCommand(um6::Comms* sensor, const um6::Accessor<RegT>& reg, std::string human_name) {
-  ROS_INFO_STREAM("Sending command: " << human_name);
-  if (!sensor->sendWaitAck(reg)) {
-    throw std::runtime_error("Command to device failed.");
-  }
-}
-
 
 /**
  * Send configuration messages to the UM6, critically, to turn on the value outputs
@@ -103,35 +91,8 @@ void configureSensor(um6::Comms* sensor) {
       UM6_BAUD_115200 << UM6_BAUD_START_BIT;
   r.communication.set(0, comm_reg);
   if (!sensor->sendWaitAck(r.communication)) {
-    throw std::runtime_error("Unable to set communication register.");
+    throw std::runtime_error("Unable to set configuration register.");
   }
-
-  // Optionally disable mag and accel updates in the sensor's EKF.
-  bool mag_updates, accel_updates;
-  ros::param::param<bool>("~mag_updates", mag_updates, true);
-  ros::param::param<bool>("~accel_updates", accel_updates, true);
-  uint32_t misc_config_reg = UM6_QUAT_ESTIMATE_ENABLED;
-  if (mag_updates) {
-    misc_config_reg |= UM6_MAG_UPDATE_ENABLED;
-  } else {
-    ROS_WARN("Excluding magnetometer updates from EKF.");
-  }
-  if (accel_updates) {
-    misc_config_reg |= UM6_ACCEL_UPDATE_ENABLED;
-  } else {
-    ROS_WARN("Excluding accelerometer updates from EKF.");
-  }
-  r.misc_config.set(0, misc_config_reg);
-  if (!sensor->sendWaitAck(r.misc_config)) {
-    throw std::runtime_error("Unable to set misc config register.");
-  }
-
-  // Optionally disable the gyro reset on startup. A user might choose to do this
-  // if there's an external process which can ascertain when the vehicle is stationary
-  // and periodically call the /reset service, which exposes the 
-  bool zero_gyros;
-  ros::param::param<bool>("~zero_gyros", zero_gyros, true);
-  if (zero_gyros) sendCommand(sensor, r.cmd_zero_gyros, "zero gyroscopes"); 
 
   // Configurable vectors.
   configureVector3(sensor, r.mag_ref, "~mag_ref", "magnetic reference vector");
@@ -139,17 +100,6 @@ void configureSensor(um6::Comms* sensor) {
   configureVector3(sensor, r.mag_bias, "~mag_bias", "magnetic bias vector");
   configureVector3(sensor, r.accel_bias, "~accel_bias", "accelerometer bias vector");
   configureVector3(sensor, r.gyro_bias, "~gyro_bias", "gyroscope bias vector");
-}
-
-
-bool handleResetService(um6::Comms* sensor, 
-    const um6::Reset::Request& req, const um6::Reset::Response& resp) {
-  um6::Registers r;
-  if (req.zero_gyros) sendCommand(sensor, r.cmd_zero_gyros, "zero gyroscopes");
-  if (req.reset_ekf) sendCommand(sensor, r.cmd_reset_ekf, "reset EKF");
-  if (req.set_mag_ref) sendCommand(sensor, r.cmd_set_mag_ref, "set magnetometer reference");
-  if (req.set_accel_ref) sendCommand(sensor, r.cmd_set_accel_ref, "set accelerometer reference");
-  return true;
 }
 
 /**
@@ -222,7 +172,6 @@ void publishMsgs(um6::Registers& r, ros::NodeHandle* n, const std_msgs::Header& 
   }
 }
 
-
 /**
  * Node entry-point. Handles ROS setup, and serial port connection/reconnection.
  */
@@ -258,18 +207,11 @@ int main(int argc, char **argv) {
       try {
         um6::Comms sensor(ser);
         configureSensor(&sensor);
-        um6::Registers registers;
-        ros::ServiceServer srv = n.advertiseService<um6::Reset::Request, um6::Reset::Response>(
-            "reset", boost::bind(handleResetService, &sensor, _1, _2)); 
 
-        while (ros::ok()) {
-          if (sensor.receive(&registers) == TRIGGER_PACKET) {
-            // Triggered by arrival of final message in group.
-            header.stamp = ros::Time::now();
-            publishMsgs(registers, &n, header);
-            ros::spinOnce();
-          }
-        }
+        um6::Registers registers;
+        sensor.startListeningThread(&registers,TRIGGER_PACKET, 
+                boost::bind(publishMsgs,_1,&n,header));
+        ros::spin();
       } catch(const std::exception& e) {
         if (ser.isOpen()) ser.close();
         ROS_ERROR_STREAM(e.what());

@@ -31,7 +31,8 @@
  *
  */
 
-#include "um6/registers.h"
+
+#include "registers.h"
 
 namespace um6 {
 
