@@ -181,7 +181,7 @@ std::string Comms::checksum(const std::string& s) {
   BOOST_FOREACH(uint8_t ch, s)
     checksum += ch;
   checksum = htons(checksum);
-  ROS_DEBUG("Computed checksum on string of length %ld as %04x.", s.length(), checksum);
+  ROS_DEBUG("Computed checksum on string of length %ld as %04x.", (long int)s.length(), checksum);
   std::string out(2, 0);
   memcpy(&out[0], &checksum, 2);
   return out;

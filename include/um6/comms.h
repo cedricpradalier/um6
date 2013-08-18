@@ -78,8 +78,8 @@ class Comms {
     static std::string message(uint8_t address, std::string data);
 
   private:
-    bool first_spin_;
     serial::Serial& serial_;
+    bool first_spin_;
 };
 }
 

@@ -48,6 +48,7 @@
 // Don't try to be too clever. Arrival of this message triggers
 // us to publish everything we have.
 const uint8_t TRIGGER_PACKET = UM6_TEMPERATURE;
+bool raw_mag = false;
 
 /**
  * Function generalizes the process of writing an XYZ vector into consecutive
@@ -84,11 +85,16 @@ void configureSensor(um6::Comms* sensor) {
   um6::Registers r;
 
   // Enable outputs we need.
+  ros::param::param<bool>("~raw_mag", raw_mag, false);
+  if (raw_mag) {
+      ROS_WARN("Exporting raw magnetometer signals");
+  }
   const uint8_t UM6_BAUD_115200 = 0x5;
   uint32_t comm_reg = UM6_BROADCAST_ENABLED |
-      UM6_GYROS_PROC_ENABLED | UM6_ACCELS_PROC_ENABLED | UM6_MAG_PROC_ENABLED |
+      UM6_GYROS_PROC_ENABLED | UM6_ACCELS_PROC_ENABLED | 
       UM6_QUAT_ENABLED | UM6_EULER_ENABLED | UM6_COV_ENABLED | UM6_TEMPERATURE_ENABLED |
       UM6_BAUD_115200 << UM6_BAUD_START_BIT;
+  comm_reg |= raw_mag?UM6_MAG_RAW_ENABLED:UM6_MAG_PROC_ENABLED;
   r.communication.set(0, comm_reg);
   if (!sensor->sendWaitAck(r.communication)) {
     throw std::runtime_error("Unable to set configuration register.");
@@ -150,9 +156,15 @@ void publishMsgs(um6::Registers& r, ros::NodeHandle* n, const std_msgs::Header& 
   if (mag_pub.getNumSubscribers() > 0) {
     geometry_msgs::Vector3Stamped mag_msg;
     mag_msg.header = header;
-    mag_msg.vector.x = r.mag.get_scaled(1);
-    mag_msg.vector.y = r.mag.get_scaled(0);
-    mag_msg.vector.z = -r.mag.get_scaled(2);
+    if (raw_mag) {
+        mag_msg.vector.x = r.mag_raw.get_scaled(0);
+        mag_msg.vector.y = r.mag_raw.get_scaled(1);
+        mag_msg.vector.z = r.mag_raw.get_scaled(2);
+    } else {
+        mag_msg.vector.x = r.mag.get_scaled(1);
+        mag_msg.vector.y = r.mag.get_scaled(0);
+        mag_msg.vector.z = -r.mag.get_scaled(2);
+    }
     mag_pub.publish(mag_msg);
   }
 
